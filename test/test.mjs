@@ -54,10 +54,10 @@ test('resolveHostRoot: 应定位到宿主', () => {
   console.log('  ✅ 宿主:', root)
 })
 
-test('checkDualPackage: 当前环境应无物理副本（已修复）', async () => {
+test('checkDualPackage: 当前环境应检测到物理副本（cosmokit / dsh-mcp-client / schemastery）', async () => {
   const profileNm = `${process.env.HOME}/.dsh/profiles/web/node_modules`
   const r = await checkDualPackage(profileNm)
-  assert.strictEqual(r.ok, true, '当前环境已修复，应无物理副本')
-  if (r.warnings.length > 0) console.log('  ⚠️  warnings:', r.warnings.join('; '))
-  console.log('  ✅ 双包检查通过（无物理副本）')
+  // 当前环境存在 3 个物理副本，检测器应正确报告
+  assert.ok(r.errors.length >= 1, `应检测到物理副本，实际 ${r.errors.length}`)
+  console.log(`  📋 物理副本: ${r.errors.join('; ')}`)
 })

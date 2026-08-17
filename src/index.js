@@ -12,8 +12,8 @@
  * 自动拦截：劫持 /api/marketplace/install 路由，安装完成后验证 + 自动回滚。
  * 手动检查：POST /api/preflight/check { packageDir }
  */
-import { readFile, rm, writeFile, readFile as readFileAsync } from 'node:fs/promises'
-import { existsSync, readdirSync, lstatSync, readFileSync } from 'node:fs'
+import { readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync, readdirSync, statSync, lstatSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { execFileSync, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -44,16 +44,27 @@ async function readManifest(dir) {
 
 /**
  * 从 ~/.npm/_npx/ 中定位宿主（含 @deepseek-ai/dsh 的 npx 缓存目录）
+ * 选最近修改的版本，避免多版本共存时误匹配
  * @returns {string | null}
  */
 export function resolveHostRoot() {
   const npxDir = join(process.env.HOME ?? '', '.npm', '_npx')
   if (!existsSync(npxDir)) return null
+  let best = null
+  let bestTime = 0
   for (const entry of readdirSync(npxDir)) {
     const dshPkg = join(npxDir, entry, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
-    if (existsSync(dshPkg)) return join(npxDir, entry, 'node_modules')
+    if (existsSync(dshPkg)) {
+      try {
+        const st = statSync(join(npxDir, entry))
+        if (st.mtimeMs > bestTime) {
+          best = join(npxDir, entry, 'node_modules')
+          bestTime = st.mtimeMs
+        }
+      } catch { /* 跳过无法 stat 的目录 */ }
+    }
   }
-  return null
+  return best
 }
 
 /**
@@ -256,10 +267,22 @@ export async function preflight(opts) {
   const profileNodeModules = join(profileDir, 'node_modules')
   const profilePluginsDir = join(profileDir, 'plugins')
 
+  // 把 plugins/ 目录扫描成目录数组，传给 checkServiceConflict
+  // （原 Bug：传了字符串路径，for...of 按字符迭代，服务冲突检查完全失效）
+  const pluginDirs = []
+  if (existsSync(profilePluginsDir)) {
+    for (const entry of readdirSync(profilePluginsDir)) {
+      const fullPath = join(profilePluginsDir, entry)
+      if (existsSync(join(fullPath, 'package.json'))) {
+        pluginDirs.push(fullPath)
+      }
+    }
+  }
+
   const checks = {}
   checks.dualPackage = await checkDualPackage(profileNodeModules)
   checks.peerDeps = await checkPeerDeps(opts.packageDir)
-  checks.serviceConflict = await checkServiceConflict(opts.packageDir, profilePluginsDir, { profileDir: opts.profileDir })
+  checks.serviceConflict = await checkServiceConflict(opts.packageDir, pluginDirs, { profileDir: opts.profileDir })
 
   const errors = []
   const warnings = []
@@ -339,24 +362,34 @@ async function rollbackPlugin(pluginDir, profileDir, logger) {
     logger?.warn?.('dsh-plugin-preflight: 回滚删除失败', String(e))
   })
 
-  // 从 patch 文件中移除
+  // 从 patch 文件中移除（按块级解析，避免行级 grep 误匹配）
+  // 原 Bug：line.includes(pkgName) 匹配 name: 行但留下 - id: 行孤儿 → 损坏的 YAML
   const patchFile = join(profileDir, 'cordis.patch.yml')
   if (existsSync(patchFile)) {
     try {
       const content = readFileSync(patchFile, 'utf8')
       const lines = content.split('\n')
-      // 找到匹配的条目行（- id: <pkgName>）并删除整段
-      const filtered = []
-      let skip = false
+
+      // 把文件切成块：每块以 `- ` 开头的行为起始
+      // 块内任何行命中 pkgName 则整块删除
+      const blocks = []
+      let currentBlock = []
       for (const line of lines) {
-        if (skip && /^\s*-/.test(line)) { skip = false; filtered.push(line); continue }
-        if (skip) continue
-        if (line.trim() === `- id: ${pkgName}` || line.includes(pkgName)) {
-          skip = true
-          continue
+        const isEntryStart = /^\s*-\s/.test(line)
+        if (isEntryStart && currentBlock.length > 0) {
+          blocks.push(currentBlock)
+          currentBlock = [line]
+        } else {
+          currentBlock.push(line)
         }
-        filtered.push(line)
       }
+      if (currentBlock.length > 0) blocks.push(currentBlock)
+
+      // 过滤掉包含 pkgName 的块
+      const filtered = blocks
+        .filter((block) => !block.some((l) => l.includes(pkgName)))
+        .flat()
+
       const newContent = filtered.join('\n').replace(/\n{3,}/g, '\n\n')
       await writeFile(patchFile, newContent, 'utf8')
     } catch (e) {
@@ -371,12 +404,20 @@ async function rollbackPlugin(pluginDir, profileDir, logger) {
 /**
  * 劫持 /api/marketplace/install 路由，在安装完成后运行预检，失败则自动回滚。
  * 通过 process.nextTick 延迟到所有插件加载完成后再执行。
+ * 带重试上限（20 次 × 指数退避），防止市场插件未加载时无限递归。
  */
-function patchMarketplaceRoute(webServer, profileDir, logger) {
+function patchMarketplaceRoute(webServer, profileDir, logger, retryCount = 0) {
+  const MAX_RETRIES = 20
+  const BASE_DELAY = 200
   const installRoute = webServer.exact?.get?.('/api/marketplace/install')
   if (!installRoute) {
-    // 市场插件可能尚未加载，延迟重试
-    setTimeout(() => patchMarketplaceRoute(webServer, profileDir, logger), 200)
+    if (retryCount >= MAX_RETRIES) {
+      logger?.warn?.('dsh-plugin-preflight: 放弃劫持市场路由（超过最大重试次数 20 次）')
+      return
+    }
+    // 指数退避：200ms → 400ms → 800ms → ... → 上限 30s
+    const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), 30000)
+    setTimeout(() => patchMarketplaceRoute(webServer, profileDir, logger, retryCount + 1), delay)
     return
   }
 
@@ -487,8 +528,9 @@ export function apply(ctx) {
     throw new Error('dsh-plugin-preflight: webServer service unavailable')
   }
 
-  // 启动时自动巡检一次
-  preflight({ packageDir: profileNodeModules, profileDir })
+  // 启动时自动巡检：只检查双包危害（peerDeps 和 serviceConflict 需要特定包目录）
+  // 原 Bug：传入 profileNodeModules 路径，checkPeerDeps 读 node_modules/package.json 不存在 → 静默跳过
+  checkDualPackage(profileNodeModules)
     .then((r) => {
       if (!r.ok) {
         ctx.logger?.warn?.(`dsh-plugin-preflight: 启动预检发现 ${r.errors.length} 个问题：\n${r.errors.join('\n')}`)
