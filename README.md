@@ -39,6 +39,30 @@ curl -X POST /api/preflight/check \
 dsh plugin install wang-jie-git/dsh-plugin-preflight
 ```
 
+## 更新
+
+已部署的插件目录是 symlink 到本地 git clone：
+
+```
+~/.dsh/profiles/web/plugins/dsh-plugin-preflight
+  → /Users/mac/dsh-dev/plugins/dsh-plugin-preflight  (git repo)
+```
+
+更新只需一条命令：
+
+```bash
+cd /Users/mac/dsh-dev/plugins/dsh-plugin-preflight && git pull origin main
+```
+
+DSH HMR 自动热加载，**无需重启进程**。
+
+可选：写入 shell 别名
+
+```bash
+# ~/.zshrc
+alias update-preflight='cd /Users/mac/dsh-dev/plugins/dsh-plugin-preflight && git pull origin main'
+```
+
 ## 检查项详解
 
 ### 双包危害（Dual Package Hazard）
