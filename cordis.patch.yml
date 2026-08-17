@@ -1,0 +1,4 @@
+# dsh-plugin-preflight patch layer
+- insert:
+    - id: preflight
+      name: './plugins/dsh-plugin-preflight/src/index.js'
