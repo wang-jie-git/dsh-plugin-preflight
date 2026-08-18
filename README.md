@@ -12,15 +12,20 @@ DSH 官方（`apps/cli/src/plugin.ts`）安装是全 pnpm 转发 + 装后 reconc
 
 ## 功能
 
-| 检查项 | 说明 |
-|--------|------|
-| **服务名冲突** | 待装插件声明的 `cordis.patch.yml` id 是否与已启用插件的服务名冲突 → 避免 `service has been registered` |
-| **peerDependencies 红线** | 目标插件是否 `peerDependencies` 指向 `@deepseek-ai/*` 核心包 → pnpm 默认 auto-install-peers 会装多份副本，触发双包危害 |
-| **双包危害检测** | 核心包(`@deepseek-ai/dsh-tools` 等)在 profile 中是否为物理副本而非 symlink → 导致 `Symbol` 分裂，报 `reading 'prepare'` |
+| # | 检查项 | 说明 |
+|---|--------|------|
+| 1 | **服务名冲突** | 待装插件声明的 `cordis.patch.yml` id 是否与已启用插件的服务名冲突 → 避免 `service has been registered` |
+| 2 | **peerDependencies 红线** | 目标插件是否 `peerDependencies` 指向 `@deepseek-ai/*` 核心包 → pnpm 默认 auto-install-peers 会装多份副本，触发双包危害 |
+| 3 | **双包危害检测** | 核心包(`@deepseek-ai/dsh-tools` 等)在 profile 中是否为物理副本而非 symlink → 导致 `Symbol` 分裂，报 `reading 'prepare'` |
+| 4 | **配置语法** | 全局 + profile 两级 `cordis.patch.yml` 完整 YAML 解析（顶级必须是数组，空文件单独报错） |
+| 5 | **插件依赖完整性** | 扫描 patch.yml 所有 `name:` 条目：相对路径查文件，npm 包名查 node_modules → 防"配置引用了未安装插件" |
+| 6 | **干运行启动测试**（可选） | spawn `dsh --port 0` 子进程，15s 超时后 kill，扫描 stderr 错误 → 覆盖全部运行时错误 |
+
+> v0.2.0 新增检查 4/5/6。检查 6 通过 `{ "dryRun": true }` 显式请求。
 
 ## 自动拦截
 
-劫持 `/api/marketplace/install` 路由，安装完成后自动运行三项预检：
+劫持 `/api/marketplace/install` 路由，安装完成后自动运行预检：
 
 - 通过 → 放行
 - 失败 → 自动回滚（删除插件目录 + 从 `cordis.patch.yml` 移除条目）
@@ -28,9 +33,15 @@ DSH 官方（`apps/cli/src/plugin.ts`）安装是全 pnpm 转发 + 装后 reconc
 ## 手动检查
 
 ```bash
+# 基础检查（检查 1-5）
 curl -X POST /api/preflight/check \
   -H 'Content-Type: application/json' \
   -d '{"packageDir": "/path/to/plugin"}'
+
+# 完整检查（含干运行启动测试，检查 6）
+curl -X POST /api/preflight/check \
+  -H 'Content-Type: application/json' \
+  -d '{"packageDir": "/path/to/plugin", "dryRun": true}'
 ```
 
 ## 安装
