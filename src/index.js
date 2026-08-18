@@ -137,7 +137,7 @@ export async function checkDualPackage(profileNodeModules) {
  * @param {string} packageDir 待安装插件目录
  * @returns {Promise<PreflightResult>}
  */
-export async function checkPeerDeps(packageDir) {
+export async function checkPeerDeps(packageDir, opts = {}) {
   const warnings = []
   const errors = []
   const pkg = await readManifest(packageDir)
@@ -146,7 +146,13 @@ export async function checkPeerDeps(packageDir) {
   const peers = { ...(pkg.peerDependencies ?? {}) }
   const deps = { ...(pkg.dependencies ?? {}) }
 
-  const coreRe = /^@deepseek-ai\/(dsh-tools|dsh-agent|dsh-agent-loop|dsh-llm|cordis|schemastery|dsh-session|dsh-skill|dsh-settings|dsh-commands)/
+  // 核心包红线列表：默认 10 个 @deepseek-ai/* 核心包，可通过 opts.corePackages 覆盖
+  const corePackages = opts.corePackages ?? [
+    'dsh-tools', 'dsh-agent', 'dsh-agent-loop', 'dsh-llm',
+    'cordis', 'schemastery', 'dsh-session', 'dsh-skill',
+    'dsh-settings', 'dsh-commands',
+  ]
+  const coreRe = new RegExp(`^@deepseek-ai/(?:${corePackages.join('|')})`)
   const corePeers = Object.keys(peers).filter((k) => coreRe.test(k))
   const coreDeps = Object.keys(deps).filter((k) => coreRe.test(k))
 
@@ -352,14 +358,27 @@ export async function checkPluginDeps(profileDir) {
   }
 
   const content = readFileSync(patchFile, 'utf8')
-  const nameEntries = []
+  // 块级解析：按顶层 `- ` 条目切块（与 rollbackPlugin 同逻辑，避免行级正则误命中注释/文档）
+  const blocks = []
+  let currentBlock = []
   for (const line of content.split('\n')) {
-    const m = /^\s*name:\s*['"]([^'"]+)['"]/.exec(line)
-    if (m) nameEntries.push(m[1])
-    else {
-      const m2 = /^\s*name:\s*(\S+)/.exec(line)
-      if (m2) nameEntries.push(m2[1])
+    const isEntryStart = /^\s*-\s/.test(line)
+    if (isEntryStart && currentBlock.length > 0) {
+      blocks.push(currentBlock)
+      currentBlock = [line]
+    } else {
+      currentBlock.push(line)
     }
+  }
+  if (currentBlock.length > 0) blocks.push(currentBlock)
+
+  const nameEntries = []
+  for (const block of blocks) {
+    // 只取条目块的 name 值（跳过纯注释块 / 嵌套 insert 块）
+    const nameLine = block.find((l) => /^\s*name:\s*\S/.test(l))
+    if (!nameLine) continue
+    const m = /^\s*name:\s*(?:"([^"]+)"|'([^']+)'|(\S+))/.exec(nameLine)
+    if (m) nameEntries.push(m[1] || m[2] || m[3])
   }
 
   if (nameEntries.length === 0) {
@@ -417,7 +436,7 @@ export async function checkPluginDeps(profileDir) {
  * @param {string} profileDir profile 目录
  * @returns {Promise<PreflightResult>}
  */
-export async function checkDryRun(profileDir) {
+export async function checkDryRun(profileDir, opts = {}) {
   const warnings = []
   const errors = []
   const detail = { steps: [] }
@@ -430,6 +449,8 @@ export async function checkDryRun(profileDir) {
   const npxBin = 'npx'
   const dshPkg = '@deepseek-ai/dsh'
   const env = { ...process.env, DSH_PREFLIGHT_DRY_RUN: '1' }
+  // DSH 运行检测端口（默认 3080），可通过 opts.port 覆盖
+  const dshPort = opts.port ?? 3080
 
   // 步骤 1：--dump-config 快速验证配置树
   detail.steps.push({ name: 'dump-config', status: 'running' })
@@ -464,7 +485,7 @@ export async function checkDryRun(profileDir) {
   // 检查 DSH 是否已在运行
   let dshRunning = false
   try {
-    const resp = await fetch('http://127.0.0.1:3080/')
+    const resp = await fetch(`http://127.0.0.1:${dshPort}/`)
     if (resp.ok) dshRunning = true
   } catch { /* 无响应，DSH 未运行 */ }
 
@@ -588,14 +609,14 @@ export async function preflight(opts) {
 
   const checks = {}
   checks.dualPackage = await checkDualPackage(profileNodeModules)
-  checks.peerDeps = await checkPeerDeps(opts.packageDir)
+  checks.peerDeps = await checkPeerDeps(opts.packageDir, { corePackages: opts.corePackages })
   checks.serviceConflict = await checkServiceConflict(opts.packageDir, pluginDirs, { profileDir: opts.profileDir })
   checks.configSyntax = await checkConfigSyntax(profileDir)
   checks.pluginDeps = await checkPluginDeps(profileDir)
 
   // 干运行检查：可选，需要明确请求
   if (opts.dryRun) {
-    checks.dryRun = await checkDryRun(profileDir)
+    checks.dryRun = await checkDryRun(profileDir, { port: opts.port })
   }
 
   const errors = []
@@ -702,24 +723,30 @@ async function rollbackPlugin(pluginDir, profileDir, logger) {
 
 /**
  * 劫持 /api/marketplace/install 路由，安装后运行预检 + 自动回滚
+ * 返回 cleanup 函数（卸载/HMR 时恢复原始 handler、清除重试 timer）
+ * 对应 postmortem「注册=可逆效果」：任何副作用都必须可逆。
  */
-function patchMarketplaceRoute(webServer, profileDir, logger, retryCount = 0) {
-  const MAX_RETRIES = 20
-  const BASE_DELAY = 200
-  const installRoute = webServer.exact?.get?.('/api/marketplace/install')
-  if (!installRoute) {
-    if (retryCount >= MAX_RETRIES) {
-      logger?.warn?.('dsh-plugin-preflight: 放弃劫持市场路由（超过最大重试次数）')
-      return
+function patchMarketplaceRoute(webServer, profileDir, logger, options = {}) {
+  const maxRetries = options.maxRetries ?? 20
+  const baseDelay = options.baseDelay ?? 200
+  const maxDelay = options.maxDelay ?? 30000
+
+  let timer = null
+  let restored = false
+
+  const originalHandlerRef = webServer.exact?.get?.('/api/marketplace/install')?.handler
+
+  const cleanup = () => {
+    if (restored) return
+    restored = true
+    if (timer) clearTimeout(timer)
+    const route = webServer.exact?.get?.('/api/marketplace/install')
+    if (route && route.handler === wrappedHandler) {
+      route.handler = originalHandlerRef
     }
-    const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), 30000)
-    setTimeout(() => patchMarketplaceRoute(webServer, profileDir, logger, retryCount + 1), delay)
-    return
   }
 
-  const originalHandler = installRoute.handler
-
-  installRoute.handler = async (req, res) => {
+  const wrappedHandler = async (req, res) => {
     let statusCode = 200
     let responseData = null
     let responseHeaders = {}
@@ -740,7 +767,7 @@ function patchMarketplaceRoute(webServer, profileDir, logger, retryCount = 0) {
     }
 
     try {
-      await originalHandler(req, res)
+      await originalHandlerRef(req, res)
     } catch (e) {
       logger?.warn?.('dsh-plugin-preflight: 原始 handler 异常', String(e?.message ?? e))
       origWriteHead(500, { 'content-type': 'application/json' })
@@ -772,7 +799,12 @@ function patchMarketplaceRoute(webServer, profileDir, logger, retryCount = 0) {
 
       if (pluginDir) {
         // 安装后预检：静态检查 + 干运行（安装后可以做完整的动态检查）
-        const result = await preflight({ packageDir: pluginDir, profileDir, dryRun: true })
+        const result = await preflight({
+          packageDir: pluginDir,
+          profileDir,
+          dryRun: true,
+          corePackages: options.corePackages,
+        })
         if (!result.ok) {
           const rolledBack = await rollbackPlugin(pluginDir, profileDir, logger)
           origWriteHead(409, { 'content-type': 'application/json' })
@@ -801,22 +833,62 @@ function patchMarketplaceRoute(webServer, profileDir, logger, retryCount = 0) {
     }
   }
 
+  const installRoute = webServer.exact?.get?.('/api/marketplace/install')
+  if (!installRoute) {
+    if (options._retryCount >= maxRetries) {
+      logger?.warn?.('dsh-plugin-preflight: 放弃劫持市场路由（超过最大重试次数）')
+      return cleanup
+    }
+    const retryCount = options._retryCount ?? 0
+    const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxDelay)
+    timer = setTimeout(() => {
+      const innerCleanup = patchMarketplaceRoute(webServer, profileDir, logger, {
+        ...options,
+        _retryCount: retryCount + 1,
+      })
+      if (typeof innerCleanup === 'function') innerCleanup()
+    }, delay)
+    return cleanup
+  }
+
+  installRoute.handler = wrappedHandler
   logger?.info?.('dsh-plugin-preflight: 已劫持 /api/marketplace/install — 安装后自动预检 + 回滚')
+  return cleanup
 }
 
 // ── 宿主端插件主体 ──
 
 /**
+ * 插件可调配置（对应 config 设计原则：无硬编码可调参数）
+ * 注意：dsh 的 cordis.patch.yml 是浅 patch，嵌套对象需扁平化声明
+ * @type {{ hookMarketplace?: boolean, corePackages?: string[], maxRetries?: number, port?: number }}
+ */
+export const configDefaults = {
+  // 是否劫持 /api/marketplace/install（卸载/HMR 时自动恢复原始 handler）
+  hookMarketplace: true,
+  // 核心包红线列表（默认 10 个 @deepseek-ai/*）
+  corePackages: [
+    'dsh-tools', 'dsh-agent', 'dsh-agent-loop', 'dsh-llm',
+    'cordis', 'schemastery', 'dsh-session', 'dsh-skill',
+    'dsh-settings', 'dsh-commands',
+  ],
+  maxRetries: 20,
+  port: 3080,
+}
+
+/**
  * @param {import('...').Context} ctx
  */
-export function apply(ctx) {
+export function apply(ctx, cfg = {}) {
+  const config = { ...configDefaults, ...cfg }
   const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '', '.dsh')
   const profileDir = join(dshHome, 'profiles', 'web')
   const profileNodeModules = join(profileDir, 'node_modules')
 
-  const webServer = ctx.get('webServer')
-  if (webServer === undefined) {
-    throw new Error('dsh-plugin-preflight: webServer service unavailable')
+  const webServer = ctx.webServer
+  if (!webServer) {
+    ctx.logger?.warn?.('dsh-plugin-preflight: webServer 服务不可用，预检闸未启用')
+    return
   }
 
   // 启动时自动巡检：双包危害 + 配置语法 + 插件依赖完整性
@@ -858,6 +930,8 @@ export function apply(ctx) {
           packageDir: target ? resolve(target) : profileDir,
           profileDir,
           dryRun: body.dryRun === true,
+          corePackages: config.corePackages,
+          port: config.port,
         }
 
         const r = await preflight(opts)
@@ -889,6 +963,8 @@ export function apply(ctx) {
           packageDir: profileDir,
           profileDir,
           dryRun: body.dryRun !== false,
+          corePackages: config.corePackages,
+          port: config.port,
         })
 
         res.writeHead(result.ok ? 200 : 409, { 'content-type': 'application/json' })
@@ -902,8 +978,20 @@ export function apply(ctx) {
 
   ctx.logger?.info?.('dsh-plugin-preflight: 预检闸已启用 (POST /api/preflight/check, POST /api/preflight/scan)')
 
-  // 自动劫持市场安装路由
-  process.nextTick(() => {
-    patchMarketplaceRoute(webServer, profileDir, ctx.logger)
-  })
+  // 自动劫持市场安装路由（effect-based：卸载/HMR 时自动恢复原始 handler，对应 postmortem「注册=可逆效果」）
+  if (config.hookMarketplace) {
+    ctx.effect(() => {
+      let cleanup = null
+      process.nextTick(() => {
+        if (ctx.disposed) return
+        cleanup = patchMarketplaceRoute(webServer, profileDir, ctx.logger, {
+          maxRetries: config.maxRetries,
+          corePackages: config.corePackages,
+        })
+      })
+      return () => {
+        if (cleanup) cleanup()
+      }
+    })
+  }
 }
