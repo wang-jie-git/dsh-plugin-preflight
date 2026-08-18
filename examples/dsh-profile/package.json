@@ -1,0 +1,30 @@
+{
+  "name": "dsh-profile-web",
+  "private": true,
+  "dependencies": {
+    "@anionex/dsh-vision-toolkit": "^0.1.7",
+    "@deepseek-ai/dsh-mcp-client": "0.1.0-rc.6",
+    "@linxin666/dsh-web-ui-all": "0.2.0",
+    "@liustack/modlens": "^3.17.3",
+    "@liustack/modsearch": "git+https://github.com/liustack/modsearch.git",
+    "dsh-doublecheck": "^0.6.0",
+    "dsh-plugin-marketplace": "github:bradeGithub/DSH-Plugins-Marketplace",
+    "wigolo": "0.2.1",
+    "zat-dsh-engine": "github:mishibeikejie/zat-dsh-engine"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@liustack/modlens",
+        "@anionex/dsh-vision-toolkit",
+        "dsh-doublecheck",
+        "dsh-plugin-marketplace",
+        "zat-dsh-engine",
+        "@liustack/modsearch",
+        "@linxin666/dsh-web-ui-all"
+      ]
+    }
+  }
+}
