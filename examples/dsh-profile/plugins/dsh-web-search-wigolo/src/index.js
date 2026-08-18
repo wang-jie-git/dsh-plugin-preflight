@@ -9,7 +9,7 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, dirname, homedir } from 'node:path'
+import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
@@ -38,8 +38,8 @@ function resolveWigoloBin() {
     return _wigoloBin
   }
 
-  // 尝试全局 wigolo（npm 全局目录，跨平台展开 ~）
-  const globalBin = join(homedir(), '.npm-global', 'bin', 'wigolo')
+  // 尝试全局 wigolo
+  const globalBin = '/Users/mac/.npm-global/bin/wigolo'
   if (existsSync(globalBin)) {
     _wigoloBin = globalBin
     return _wigoloBin
@@ -58,8 +58,8 @@ function adaptSearchResult(wigoloJson) {
   const sources = (wigoloJson.results ?? []).map((r) => ({
     url: r.url ?? '',
     title: r.title ?? '',
-    snippet: (r.content ?? '').slice(0, 500),
-    publishedAt: r.published ?? undefined,
+    snippet: (r.snippet ?? r.content_from_snippet ?? r.content ?? '').slice(0, 500),
+    publishedAt: r.published_date ?? r.published ?? undefined,
   }))
   return { sources, truncated: false }
 }
@@ -69,9 +69,10 @@ function adaptSearchResult(wigoloJson) {
  * wigolo fetch --json: { url, content, statusCode, contentType }
  */
 function adaptFetchResult(wigoloJson, requestUrl) {
-  const statusCode = wigoloJson.statusCode ?? 200
-  const content = wigoloJson.content ?? ''
-  const isHtml = (wigoloJson.contentType ?? '').includes('html') || content.includes('<html')
+  const statusCode = wigoloJson.http_status ?? wigoloJson.statusCode ?? 200
+  const content = wigoloJson.markdown ?? wigoloJson.content ?? ''
+  const contentType = wigoloJson.contentType ?? wigoloJson.metadata?.contentType ?? ''
+  const isHtml = contentType.includes('html') || content.includes('<html')
   return {
     url: wigoloJson.url ?? requestUrl,
     statusCode,
@@ -134,3 +135,6 @@ export function apply(ctx) {
   ctx.web.registerFetchProvider(new WigoloFetchProvider())
   ctx.logger?.info?.(`dsh-web-search-wigolo: 已注册搜索提供商 "${WIGOLO_PROVIDER_ID}"`)
 }
+
+// Exported for unit testing (behavior-neutral; used by test/adapters.test.mjs).
+export { adaptSearchResult, adaptFetchResult }
