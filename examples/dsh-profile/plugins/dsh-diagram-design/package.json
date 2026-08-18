@@ -1,0 +1,13 @@
+{
+  "name": "dsh-diagram-design",
+  "version": "0.1.0",
+  "description": "Diagram Design adapter for DSH — 28 editorial diagram types as self-contained HTML+SVG",
+  "type": "module",
+  "main": "src/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

@@ -13,7 +13,8 @@ dsh-profile/
 ├── plugins/                    # profile 内本地插件源码
 │   ├── demo-tool/              # 演示插件
 │   ├── dsh-plugin-preflight/   # 安装预检闸 v0.2.0
-│   └── dsh-web-search-wigolo/  # Wigolo 搜索适配器
+│   ├── dsh-web-search-wigolo/  # Wigolo 搜索适配器
+│   └── dsh-diagram-design/     # 编辑级图表生成（28 种图类型，vendored 上游 skill 资产）
 ```
 
 ## 环境依赖
