@@ -69,6 +69,17 @@ return JSON.parse(stdout)
 
 **绝密教训**：全局路径必须 `join(homedir(), ...)` 跨平台展开，不要硬编码 `/Users/mac/...` —— 否则仓库脱敏和他人复现都会踩坑（我们在 `dsh-web-search-wigolo` 上踩过并修复）。
 
+**⚠️ 契约漂移防护（wigolo 0.2.1 事故教训，2026-08-18）**：
+
+外部 CLI 升级会**静默修改 JSON 输出字段**，适配层字段映射过时的后果是**不报错但全空**（搜索摘要全空、fetch 空正文）——最危险的一类故障。
+
+防御三原则：
+1. **字段映射必须带 `??` 回退链**：`r.snippet ?? r.content_from_snippet ?? r.content` —— 新旧字段共存，缺任何字段都降级而非崩。
+2. **适配层记录目标 CLI 版本契约**：package.json 里声明 `wigolo >= 0.2.1` 之类的 engine 约束，README 记下验证过的字段。
+3. **升级 CLI 后必跑干跑测试**：`wigolo search <q> --json` 打印真实输出，肉眼对比适配函数字段名。wigolo 自带 `doctor` 命令可用于诊断。
+
+事故复盘：本次 wigolo 0.2.1 变更 = `r.content→r.snippet`、`published→published_date`、`statusCode→http_status`、`content→markdown`、`contentType→metadata?.contentType`。修复在本机 profile 完成后**必须同步源仓库**（否则下一个环境复现老 bug）。
+
 ### 1.3 MCP 桥接
 
 目标真的是 MCP server 时，先检查 `dsh-mcp-client`（官方）能否直接配置接入；能则只写 `cordis.patch.yml` 配置，不写代码。`wigolo` 早期踩坑就是"想当 MCP 用但注册的是 WebSearchProvider"，混了两个系统。
