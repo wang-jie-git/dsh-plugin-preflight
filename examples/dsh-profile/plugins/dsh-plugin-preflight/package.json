@@ -1,0 +1,14 @@
+{
+  "name": "dsh-plugin-preflight",
+  "version": "0.2.0",
+  "description": "DSH 插件安装预检闸：服务冲突 / peerDependencies 红线 / 双包危害 / 配置语法 / 依赖完整性 / 干运行启动测试",
+  "type": "module",
+  "main": "src/index.js",
+  "files": ["src", "cordis.patch.yml"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

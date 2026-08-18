@@ -1,0 +1,34 @@
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
+minimumReleaseAgeExclude:
+  - '@liustack/modlens@3.17.3'
+  - '@liustack/modlens@3.18.1'
+  - '@anionex/dsh-vision-toolkit@0.1.31'
+  - '@linxin666/dsh-client-ui-aionui-panel@0.2.0'
+  - '@linxin666/dsh-client-ui-community-plugins@0.2.0'
+  - '@linxin666/dsh-client-ui-git-graph@0.2.0'
+  - '@linxin666/dsh-client-ui-skill-explorer@0.2.0'
+  - '@linxin666/dsh-client-ui-skin-center@0.2.0'
+  - '@linxin666/dsh-client-ui-task-board@0.2.0'
+  - '@linxin666/dsh-client-ui-web-ui-settings@0.2.0'
+  - '@linxin666/dsh-liangshen@0.2.0'
+  - '@linxin666/dsh-pet@0.2.0'
+  - '@linxin666/dsh-remote-web-ui@0.2.0'
+  - '@linxin666/dsh-skins@0.2.0'
+  - '@linxin666/dsh-ssh@0.2.0'
+  - '@linxin666/dsh-tool-describe-image@0.2.0'
+  - '@linxin666/dsh-web-ui-all@0.2.0'
+  - dsh-better-sidebar@0.13.0
+allowBuilds:
+  '@google/genai': true
+  better-sqlite3: true
+  cloudflared: true
+  cpu-features: true
+  node-pty: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
+  ssh2: true

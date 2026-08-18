@@ -1,0 +1,13 @@
+{
+  "name": "dsh-web-search-wigolo",
+  "version": "0.1.0",
+  "description": "Wigolo search provider for DSH — free keyless web search via local MCP server",
+  "type": "module",
+  "main": "src/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

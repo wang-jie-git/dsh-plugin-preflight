@@ -1,0 +1,8 @@
+{
+  "name": "dsh-demo-tool",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "files": ["src", "cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

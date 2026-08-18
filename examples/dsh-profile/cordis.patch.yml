@@ -1,0 +1,164 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+# Wigolo bridge: free keyless web search provider, fetch_page & research_topic tools.
+- id: web
+  config:
+    searchProvider: wigolo
+
+# Demo 插件（profile 内本地源码，依赖从 profile/node_modules 解析）
+- insert:
+    - id: demo-tool
+      name: './plugins/demo-tool/src/index.js'
+      config:
+        greeting: 'One'
+        simulateLatency: false
+
+# Disabled: conflicts with SandboxBashExecutor (both register "shell" service).
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: pwsh-sandbox
+  disabled: true
+
+# dsh-plugin-preflight: 安装预检闸（自动劫持市场路由 + 自动巡检）
+- insert:
+    - id: preflight
+      name: './plugins/dsh-plugin-preflight/src/index.js'
+
+# Wigolo search provider: 免费无 key 本地搜索（通过 wigolo CLI）
+- insert:
+    - id: dsh-web-search-wigolo
+      name: './plugins/dsh-web-search-wigolo/src/index.js'
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-pwsh
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: agent-instructions
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: skill-filesystem
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: skill-badge
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-skill
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: plan-mode
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: compaction-basic
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: command-compact
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-subagent-control
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-subagent-list-agents
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-subagent
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-subagent-fork
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: workflow-worker-thread
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-workflow
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-result-pruner
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-todo
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-goal
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-ralph
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-web
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-subagent-codex
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-subagent-claude-code
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: c7d1f30c
+  disabled: false
+#Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-bash
+  name: tool-bash
+  disabled: false
+#Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-jobs
+  name: tool-jobs
+  disabled: false
+#Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-fs
+  name: tool-fs
+  disabled: false
+#Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-fs-search
+  name: tool-fs-search
+  disabled: false
+#Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: tool-str-replace-editor
+  name: tool-str-replace-editor
+  disabled: false
+#Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: d4552af8
+  name: d4552af8
+  disabled: false
+# Managed by dsh-plugin-hub. Remove this row to return control to higher-level configuration.
+- id: 1069b7e8
+  name: 1069b7e8
+  disabled: false
+
+# dsh-web-ui 全家桶聚合插件 v0.2.0（从 zhu1090093659/dsh-web-ui 构建）
+# 该包自带的 cordis.patch.yml 会插入所有子插件（web-ui-settings, skin-center,
+# aionui-panel, task-board, git-graph, pet, remote-web-ui, ssh, describe-image,
+# liangshen, skill-explorer, community-plugins, better-sidebar）
+- insert:
+    - id: dsh-web-ui-all
+      name: '@linxin666/dsh-web-ui-all'
+
+# remote-web-ui: 启用 cloudflared 自动隧道（手机扫码远程访问）
+- id: remote-web-ui
+  config:
+    autoTunnel: true
+
+# 插件商店由 dsh-plugin-marketplace 提供
+
+# --- dsh-skin managed (auto-generated; do not edit) ---
+- id: ui-skin-blue-fantasy
+  disabled: true
+- id: ui-skin-dragon-heir
+  disabled: true
+- id: ui-skin-harbor
+  disabled: true
+- id: ui-skin-maid-atelier
+  disabled: true
+- id: ui-skin-matrix
+  disabled: true
+- id: ui-skin-miku
+  disabled: true
+- id: ui-skin-minecraft
+  disabled: true
+- id: ui-skin-trading
+  disabled: true
+- id: ui-skin-whale-mom
+  disabled: true
+- id: ui-skin-whale-song
+  disabled: true
+- id: ui-skin-xp
+  disabled: true
+# --- end dsh-skin managed ---

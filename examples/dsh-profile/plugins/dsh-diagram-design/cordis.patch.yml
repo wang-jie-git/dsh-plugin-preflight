@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-diagram-design
+      name: './plugins/dsh-diagram-design/src/index.js'
