@@ -982,14 +982,16 @@ export function apply(ctx, cfg = {}) {
   if (config.hookMarketplace) {
     ctx.effect(() => {
       let cleanup = null
+      let active = true
       process.nextTick(() => {
-        if (ctx.disposed) return
+        if (!active) return
         cleanup = patchMarketplaceRoute(webServer, profileDir, ctx.logger, {
           maxRetries: config.maxRetries,
           corePackages: config.corePackages,
         })
       })
       return () => {
+        active = false
         if (cleanup) cleanup()
       }
     })
